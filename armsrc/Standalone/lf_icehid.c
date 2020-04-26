@@ -37,7 +37,7 @@
  * To retrieve log file from flash:
  *
  * 1. mem spiffs dump o lf_hidcollect.log f lf_hidcollect.log
- *    Copies log file from flash to your PC.
+ *    Copies log file from flash to your client.
  *
  * 2. exit the Proxmark3 client
  *
@@ -57,9 +57,9 @@
 void DownloadLogInstructions() {
     Dbprintf("");
     Dbprintf("[=] To get the logfile from flash and display it:");
-    Dbprintf("[=] " _YELLOW_("1.") "mem spiffs dump o "LF_HIDCOLLECT_LOGFILE" f "LF_HIDCOLLECT_LOGFILE);
-    Dbprintf("[=] " _YELLOW_("2.") "exit proxmark3 client");
-    Dbprintf("[=] " _YELLOW_("3.") "cat "LF_HIDCOLLECT_LOGFILE);
+    Dbprintf("[=] " _YELLOW_("1.") " mem spiffs dump o "LF_HIDCOLLECT_LOGFILE" f "LF_HIDCOLLECT_LOGFILE);
+    Dbprintf("[=] " _YELLOW_("2.") " exit proxmark3 client");
+    Dbprintf("[=] " _YELLOW_("3.") " cat "LF_HIDCOLLECT_LOGFILE);
 }
 
 bool log_exists;

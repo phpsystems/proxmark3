@@ -2,11 +2,10 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <inttypes.h>
+#include <string.h>
 
-#include "HardwareProfile.h"
-#include "rfidler.h"
 #include "hitagcrypto.h"
-#include "util.h"
+#include "ht2crackutils.h"
 
 // max number of NrAr pairs to load - you only need 136 good pairs, but this
 // is the max
@@ -34,27 +33,6 @@ struct threaddata {
     uint64_t klowerstart;
     uint64_t klowerrange;
 };
-
-void printbin(uint64_t val) {
-    int i;
-
-    for (i = 0; i < 64; i++) {
-        if (val & 0x8000000000000000) {
-            printf("1");
-        } else {
-            printf("0");
-        }
-        val = val << 1;
-    }
-}
-
-void printstate(Hitag_State *hstate) {
-    printf("shiftreg =\t");
-    printbin(hstate->shiftreg);
-    printf("\n");
-}
-
-
 
 // macros to pick out 4 bits in various patterns of 1s & 2s & make a new number
 // these and the following hitag2_crypt function taken from Rfidler
@@ -214,15 +192,15 @@ void *crack(void *d) {
     uint64_t y;
     uint64_t ytmp;
     uint64_t klowery;
-    unsigned int count = 0;
+    unsigned int count;
     uint64_t bit;
     uint64_t b;
     uint64_t z;
     uint64_t foundkey;
     uint64_t revkey;
     int ret;
-    unsigned int found = 0;
-    unsigned int badguess = 0;
+    unsigned int found;
+    unsigned int badguess;
 
     struct Tklower *Tk = NULL;
 
@@ -312,7 +290,7 @@ void *crack(void *d) {
                     // normalise foundkey
                     revkey = rev64(foundkey);
                     foundkey = ((revkey >> 40) & 0xff) | ((revkey >> 24) & 0xff00) | ((revkey >> 8) & 0xff0000) | ((revkey << 8) & 0xff000000) | ((revkey << 24) & 0xff00000000) | ((revkey << 40) & 0xff0000000000);
-                    printf("\n\nSuccess - key = %012lX\n", foundkey);
+                    printf("\n\nSuccess - key = %012"PRIx64"\n", foundkey);
                     exit(0);
 
                     return (void *)foundkey;
@@ -446,7 +424,7 @@ int main(int argc, char *argv[]) {
         }
         printf("thread %i finished\n", i);
         if (status) {
-            printf("Key = %012lX\n", (uint64_t)status);
+            printf("Key = %012"PRIx64"\n", (uint64_t)status);
             exit(0);
         }
     }
