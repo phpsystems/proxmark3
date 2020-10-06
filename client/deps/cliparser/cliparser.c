@@ -10,50 +10,104 @@
 
 #include "cliparser.h"
 #include <string.h>
+#include <stdlib.h>
+#include <util.h> // Get color constants
+#include <ui.h> // get PrintAndLogEx
 
-void **argtable = NULL;
-size_t argtableLen = 0;
-const char *programName = NULL;
-const char *programHint = NULL;
-const char *programHelp = NULL;
-char buf[500] = {0};
+#ifndef ARRAYLEN
+# define ARRAYLEN(x) (sizeof(x)/sizeof((x)[0]))
+#endif
 
-int CLIParserInit(const char *vprogramName, const char *vprogramHint, const char *vprogramHelp) {
-    argtable = NULL;
-    argtableLen = 0;
-    programName = vprogramName;
-    programHint = vprogramHint;
-    programHelp = vprogramHelp;
-    memset(buf, 0x00, 500);
-    return 0;
-}
+// Custom Colors
+// To default the color return s
+#define _SectionTagColor_(s) _GREEN_(s)
+#define _ExampleColor_(s) _YELLOW_(s)
+#define _CommandColor_(s) _RED_(s)
+#define _DescriptionColor_(s) _CYAN_(s)
+#define _ArgColor_(s) s
+#define _ArgHelpColor_(s) s
+// End Custom Colors
+// Option width set to 30 to allow option descriptions to align.  approx line 74
+// Example width set to 50 to allow help descriptions to align.  approx line 93
 
-int CLIParserParseArg(int argc, char **argv, void *vargtable[], size_t vargtableLen, bool allowEmptyExec) {
-    int nerrors;
-
-    argtable = vargtable;
-    argtableLen = vargtableLen;
-
-    /* verify the argtable[] entries were allocated sucessfully */
-    if (arg_nullcheck(argtable) != 0) {
-        /* NULL entries were detected, some allocations must have failed */
+int CLIParserInit(CLIParserContext **ctx, const char *vprogramName, const char *vprogramHint, const char *vprogramHelp) {
+    *ctx = malloc(sizeof(CLIParserContext));
+    if (!*ctx) {
         printf("ERROR: Insufficient memory\n");
         fflush(stdout);
         return 2;
     }
+    (*ctx)->argtable = NULL;
+    (*ctx)->argtableLen = 0;
+    (*ctx)->programName = vprogramName;
+    (*ctx)->programHint = vprogramHint;
+    (*ctx)->programHelp = vprogramHelp;
+    memset((*ctx)->buf, 0x00, sizeof((*ctx)->buf));
+    return 0;
+}
+
+int CLIParserParseArg(CLIParserContext *ctx, int argc, char **argv, void *vargtable[], size_t vargtableLen, bool allowEmptyExec) {
+    int nerrors;
+
+    ctx->argtable = vargtable;
+    ctx->argtableLen = vargtableLen;
+
+    /* verify the argtable[] entries were allocated sucessfully */
+    if (arg_nullcheck(ctx->argtable) != 0) {
+        /* NULL entries were detected, some allocations must have failed */
+        PrintAndLogEx(ERR, "ERROR: Insufficient memory\n");
+        fflush(stdout);
+        return 2;
+    }
     /* Parse the command line as defined by argtable[] */
-    nerrors = arg_parse(argc, argv, argtable);
+    nerrors = arg_parse(argc, argv, ctx->argtable);
 
     /* special case: '--help' takes precedence over error reporting */
-    if ((argc < 2 && !allowEmptyExec) || ((struct arg_lit *)argtable[0])->count > 0) { // help must be the first record
-        printf("Usage: %s", programName);
-        arg_print_syntaxv(stdout, argtable, "\n");
-        if (programHint)
-            printf("%s\n\n", programHint);
-        arg_print_glossary(stdout, argtable, "    %-20s %s\n");
-        printf("\n");
-        if (programHelp)
-            printf("%s \n", programHelp);
+    if ((argc < 2 && !allowEmptyExec) || ((struct arg_lit *)(ctx->argtable)[0])->count > 0) { // help must be the first record
+        if (ctx->programHint)
+            PrintAndLogEx(NORMAL, "\n"_DescriptionColor_("%s"), ctx->programHint);
+
+        PrintAndLogEx(NORMAL, "\n"_SectionTagColor_("usage:"));
+        PrintAndLogEx(NORMAL, "    "_CommandColor_("%s")NOLF, ctx->programName);
+        arg_print_syntax(stdout, ctx->argtable, "\n\n");
+        
+        PrintAndLogEx(NORMAL, _SectionTagColor_("options:"));
+
+        arg_print_glossary(stdout, ctx->argtable, "    "_ArgColor_("%-30s")" "_ArgHelpColor_("%s")"\n");
+
+        PrintAndLogEx(NORMAL, "");
+        if (ctx->programHelp) {
+            PrintAndLogEx(NORMAL, _SectionTagColor_("examples/notes:"));
+            char *buf = NULL;
+            int idx = 0;
+            buf = realloc(buf, strlen(ctx->programHelp) + 1); // more then enough as we are splitting
+
+            char *p2; // pointer to split example from comment.
+            int egWidth = 30;
+            for (int i = 0; i <= strlen(ctx->programHelp); i++) {  // <= so to get string terminator.
+                buf[idx++] = ctx->programHelp[i];
+                if ((ctx->programHelp[i] == '\n') || (ctx->programHelp[i] == 0x00)) {
+                    buf[idx - 1] = 0x00;
+                    p2 = strstr(buf, "->"); // See if the example has a comment.
+                    if (p2 != NULL) {
+                        *(p2 - 1) = 0x00;
+
+                        if (strlen(buf) > 28)
+                            egWidth = strlen(buf) + 5;
+                        else
+                            egWidth = 30;
+
+                        PrintAndLogEx(NORMAL, "    "_ExampleColor_("%-*s")" %s", egWidth, buf, p2);
+                    } else {
+                        PrintAndLogEx(NORMAL, "    "_ExampleColor_("%-*s"), egWidth, buf);
+                    }
+                    idx = 0;
+                }
+            }
+
+            PrintAndLogEx(NORMAL, "");
+            free(buf);
+        }
 
         fflush(stdout);
         return 1;
@@ -62,14 +116,15 @@ int CLIParserParseArg(int argc, char **argv, void *vargtable[], size_t vargtable
     /* If the parser returned any errors then display them and exit */
     if (nerrors > 0) {
         /* Display the error details contained in the arg_end struct.*/
-        arg_print_errors(stdout, ((struct arg_end *)argtable[vargtableLen - 1]), programName);
-        printf("Try '%s --help' for more information.\n", programName);
+        arg_print_errors(stdout, ((struct arg_end *)(ctx->argtable)[vargtableLen - 1]), ctx->programName);
+        PrintAndLogEx(WARNING, "Try '%s --help' for more information.\n", ctx->programName);
         fflush(stdout);
         return 3;
     }
 
     return 0;
 }
+
 
 enum ParserState {
     PS_FIRST,
@@ -79,23 +134,24 @@ enum ParserState {
 
 #define isSpace(c)(c == ' ' || c == '\t')
 
-int CLIParserParseString(const char *str, void *vargtable[], size_t vargtableLen, bool allowEmptyExec) {
-    return CLIParserParseStringEx(str, vargtable, vargtableLen, allowEmptyExec, false);
+int CLIParserParseString(CLIParserContext *ctx, const char *str, void *vargtable[], size_t vargtableLen, bool allowEmptyExec) {
+    return CLIParserParseStringEx(ctx, str, vargtable, vargtableLen, allowEmptyExec, false);
 }
 
-int CLIParserParseStringEx(const char *str, void *vargtable[], size_t vargtableLen, bool allowEmptyExec, bool clueData) {
+int CLIParserParseStringEx(CLIParserContext *ctx, const char *str, void *vargtable[], size_t vargtableLen, bool allowEmptyExec, bool clueData) {
     int argc = 0;
     char *argv[200] = {NULL};
 
     int len = strlen(str);
-    char *bufptr = buf;
+    memset(ctx->buf, 0x00, ARRAYLEN(ctx->buf));
+    char *bufptr = ctx->buf;
     char *spaceptr = NULL;
     enum ParserState state = PS_FIRST;
 
     argv[argc++] = bufptr;
     // param0 = program name
-    memcpy(buf, programName, strlen(programName) + 1); // with 0x00
-    bufptr += strlen(programName) + 1;
+    memcpy(ctx->buf, ctx->programName, strlen(ctx->programName) + 1); // with 0x00
+    bufptr += strlen(ctx->programName) + 1;
     if (len)
         argv[argc++] = bufptr;
 
@@ -140,14 +196,7 @@ int CLIParserParseStringEx(const char *str, void *vargtable[], size_t vargtableL
         }
     }
 
-    return CLIParserParseArg(argc, argv, vargtable, vargtableLen, allowEmptyExec);
-}
-
-void CLIParserFree() {
-    arg_freetable(argtable, argtableLen);
-    argtable = NULL;
-
-    return;
+    return CLIParserParseArg(ctx, argc, argv, vargtable, vargtableLen, allowEmptyExec);
 }
 
 // convertors
@@ -155,7 +204,7 @@ int CLIParamHexToBuf(struct arg_str *argstr, uint8_t *data, int maxdatalen, int 
     *datalen = 0;
 
     int ibuf = 0;
-    uint8_t tmp_buf[256] = {0};
+    uint8_t tmp_buf[512] = {0};
     int res = CLIParamStrToBuf(argstr, tmp_buf, maxdatalen * 2, &ibuf); // *2 because here HEX
     if (res) {
         printf("Parameter error: buffer overflow.\n");
@@ -189,7 +238,7 @@ int CLIParamStrToBuf(struct arg_str *argstr, uint8_t *data, int maxdatalen, int 
     if (!argstr->count)
         return 0;
 
-    uint8_t tmp_buf[256] = {0};
+    uint8_t tmp_buf[512] = {0};
     int ibuf = 0;
 
     for (int i = 0; i < argstr->count; i++) {
@@ -202,12 +251,13 @@ int CLIParamStrToBuf(struct arg_str *argstr, uint8_t *data, int maxdatalen, int 
     if (!ibuf)
         return 0;
 
-    if (ibuf > maxdatalen) {
+    if (ibuf + 1 > maxdatalen) {
+        printf("Parameter error: string too long, expect max %i chars\n", maxdatalen - 1);
         fflush(stdout);
         return 2;
     }
 
-    memcpy(data, tmp_buf, ibuf);
+    memcpy(data, tmp_buf, ibuf + 1);
     *datalen = ibuf;
     return 0;
 }

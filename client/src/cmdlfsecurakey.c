@@ -34,17 +34,17 @@ static int usage_lf_securakey_clone(void) {
     PrintAndLogEx(NORMAL, "  b <raw hex>     : raw hex data. 12 bytes max");
     PrintAndLogEx(NORMAL, "");
     PrintAndLogEx(NORMAL, "Examples:");
-    PrintAndLogEx(NORMAL, "       lf securakey clone 7FCB400001ADEA5344300000");
+    PrintAndLogEx(NORMAL, _YELLOW_("       lf securakey clone b 7FCB400001ADEA5344300000"));
     return PM3_SUCCESS;
 }
 
 //see ASKDemod for what args are accepted
-static int CmdSecurakeyDemod(const char *Cmd) {
-    (void)Cmd; // Cmd is not used so far
+int demodSecurakey(bool verbose) {
+    (void) verbose; // unused so far
 
     //ASK / Manchester
     bool st = false;
-    if (ASKDemod_ext("40 0 0", false, false, 1, &st) != PM3_SUCCESS) {
+    if (ASKDemod_ext(40, 0, 0, 0, false, false, false, 1, &st) != PM3_SUCCESS) {
         PrintAndLogEx(DEBUG, "DEBUG: Error - Securakey: ASK/Manchester Demod failed");
         return PM3_ESOFT;
     }
@@ -114,9 +114,9 @@ static int CmdSecurakeyDemod(const char *Cmd) {
     // test parities - evenparity32 looks to add an even parity returns 0 if already even...
     bool parity = !evenparity32(lWiegand) && !oddparity32(rWiegand);
 
-    PrintAndLogEx(SUCCESS, "Securakey Tag Found--BitLen: %u, Card ID: %u, FC: 0x%X, Raw: %08X%08X%08X", bitLen, cardid, fc, raw1, raw2, raw3);
+    PrintAndLogEx(SUCCESS, "Securakey - len: " _GREEN_("%u") " FC: " _GREEN_("0x%X")" Card: " _GREEN_("%u") ", Raw: %08X%08X%08X", bitLen, fc, cardid, raw1, raw2, raw3);
     if (bitLen <= 32)
-        PrintAndLogEx(SUCCESS, "Wiegand: %08X, Parity: %s", (lWiegand << (bitLen / 2)) | rWiegand, parity ? "Passed" : "Failed");
+        PrintAndLogEx(SUCCESS, "Wiegand: " _GREEN_("%08X") " parity (%s)", (lWiegand << (bitLen / 2)) | rWiegand, parity ? _GREEN_("ok") : _RED_("fail"));
 
     PrintAndLogEx(INFO, "\nHow the FC translates to printed FC is unknown");
     PrintAndLogEx(INFO, "How the checksum is calculated is unknown");
@@ -124,9 +124,15 @@ static int CmdSecurakeyDemod(const char *Cmd) {
     return PM3_SUCCESS;
 }
 
+static int CmdSecurakeyDemod(const char *Cmd) {
+    (void)Cmd; // Cmd is not used so far
+    return demodSecurakey(true);
+}
+
 static int CmdSecurakeyRead(const char *Cmd) {
+    (void)Cmd; // Cmd is not used so far
     lf_read(false, 8000);
-    return CmdSecurakeyDemod(Cmd);
+    return demodSecurakey(true);
 }
 
 static int CmdSecurakeyClone(const char *Cmd) {
@@ -210,9 +216,5 @@ int detectSecurakey(uint8_t *dest, size_t *size) {
     if (*size != 96) return -3; //wrong demoded size
     //return start position
     return (int)startIdx;
-}
-
-int demodSecurakey(void) {
-    return CmdSecurakeyDemod("");
 }
 
